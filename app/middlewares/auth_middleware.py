@@ -16,6 +16,16 @@ PUBLIC_PATHS = {
 }
 
 
+def is_public_path(path: str) -> bool:
+    """判断路径是否允许跳过 JWT 鉴权。"""
+    normalized_path = path.rstrip("/") or "/"
+    return (
+        normalized_path in PUBLIC_PATHS
+        or normalized_path.startswith("/docs/")
+        or normalized_path.startswith("/redoc/")
+    )
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """JWT 全局鉴权中间件"""
 
@@ -27,7 +37,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # 公开路径跳过认证
-        if path in PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+        if is_public_path(path):
             return await call_next(request)
 
         # 获取 Token

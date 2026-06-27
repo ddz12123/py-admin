@@ -3,8 +3,10 @@ from pydantic import ValidationError
 
 from app.api.routes import auth_routes
 from app.core.exceptions import AppException
+from app.core.security import hash_password, verify_password
 from app.db.session import get_db
 from app.main import app
+from app.middlewares.auth_middleware import is_public_path
 from app.schemas.auth_schema import RegisterRequest
 
 
@@ -23,6 +25,15 @@ def test_health_check_public():
         "message": "success",
         "data": {"status": "ok"},
     }
+
+
+def test_public_route_with_trailing_slash_is_not_auth_blocked():
+    client = TestClient(app)
+
+    response = client.get("/api/system/health/", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "http://testserver/api/system/health"
 
 
 def test_protected_route_requires_token():
@@ -101,6 +112,35 @@ def test_username_is_validated_after_strip():
         assert exc.errors()[0]["msg"] == "Value error, 用户名长度不能少于2个字符"
     else:
         raise AssertionError("用户名 trim 后长度不足时应校验失败")
+
+
+def test_max_length_password_hashes_and_verifies():
+    password = "p" * 128
+
+    hashed = hash_password(password)
+
+    assert verify_password(password, hashed)
+    assert not verify_password(password + "x", hashed)
+
+
+def test_legacy_bcrypt_password_hash_still_verifies():
+    import bcrypt
+
+    password = "legacy-password"
+    legacy_hash = bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt(),
+    ).decode("utf-8")
+
+    assert verify_password(password, legacy_hash)
+
+
+def test_public_path_matching_does_not_overmatch():
+    assert is_public_path("/docs")
+    assert is_public_path("/docs/")
+    assert is_public_path("/docs/oauth2-redirect")
+    assert is_public_path("/api/system/health/")
+    assert not is_public_path("/docs-extra")
 
 
 def test_openapi_marks_only_protected_routes():

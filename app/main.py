@@ -7,7 +7,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.db.session import engine
-from app.middlewares.auth_middleware import AuthMiddleware, PUBLIC_PATHS
+from app.middlewares.auth_middleware import AuthMiddleware, is_public_path
 from app.middlewares.request_log_middleware import RequestLogMiddleware
 
 settings = get_settings()
@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
         }
         # 只给受保护接口标记鉴权，避免注册/登录/健康检查文档误导调用方
         for path, methods in openapi_schema.get("paths", {}).items():
-            if path in PUBLIC_PATHS:
+            if is_public_path(path):
                 continue
             for method, detail in methods.items():
                 if method not in {"get", "post", "put", "patch", "delete"}:
