@@ -1,42 +1,50 @@
 from collections.abc import AsyncGenerator
+from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.config import get_settings
+from app.core.config import Settings
 
-settings = get_settings()
-
-engine_options = {
-    "echo": settings.DEBUG,
-    "future": True,
-    "pool_pre_ping": True,  # 连接前 ping 检测
-}
-
-# MySQL 生产/开发连接池配置；SQLite 等测试库不支持这些参数
-if settings.DATABASE_URL.startswith("mysql"):
-    engine_options.update(
-        {
-            "pool_size": 10,       # 连接池大小
-            "max_overflow": 20,    # 最大溢出连接数
-            "pool_recycle": 3600,  # 连接回收时间（秒）
-        }
-    )
-
-engine = create_async_engine(settings.DATABASE_URL, **engine_options)
-
-# 创建异步 Session 工厂
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+SessionFactory = async_sessionmaker[AsyncSession]
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """获取数据库 Session（依赖注入用）"""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+def create_db_engine(settings: Settings) -> AsyncEngine:
+    """根据配置创建数据库引擎。"""
+    engine_options: dict[str, Any] = {
+        "echo": settings.SQL_ECHO,
+        "pool_pre_ping": True,
+    }
+    if settings.DATABASE_URL.startswith("mysql"):
+        engine_options.update(
+            {
+                "pool_size": settings.DB_POOL_SIZE,
+                "max_overflow": settings.DB_MAX_OVERFLOW,
+                "pool_recycle": settings.DB_POOL_RECYCLE,
+            }
+        )
+    return create_async_engine(settings.DATABASE_URL, **engine_options)
+
+
+def create_session_factory(engine: AsyncEngine) -> SessionFactory:
+    """创建异步 Session 工厂。"""
+    return async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+
+def get_session_factory(request: Request) -> SessionFactory:
+    """从应用实例获取 Session 工厂。"""
+    return request.app.state.db_session_factory
+
+
+async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """只管理 Session 生命周期，不自动提交事务，适用于查询场景。"""
+    session_factory = get_session_factory(request)
+    async with session_factory() as session:
+        yield session
+
+
+async def get_transactional_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """提供请求级事务：正常结束自动提交，出现异常自动回滚。"""
+    session_factory = get_session_factory(request)
+    async with session_factory.begin() as session:
+        yield session

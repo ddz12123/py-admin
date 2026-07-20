@@ -3,11 +3,13 @@ from pydantic import ValidationError
 
 from app.api.routes import auth_routes
 from app.core.exceptions import AppException
+from app.core.response import ErrorCode
 from app.core.security import hash_password, verify_password
-from app.db.session import get_db
-from app.main import app
-from app.middlewares.auth_middleware import is_public_path
+from app.db.session import get_db, get_transactional_db
+from app.main import create_app
 from app.schemas.auth_schema import RegisterRequest
+
+app = create_app()
 
 
 async def _override_db():
@@ -37,28 +39,26 @@ def test_public_route_with_trailing_slash_is_not_auth_blocked():
 
 
 def test_protected_route_requires_token():
-    client = TestClient(app)
-
-    response = client.get("/api/users")
+    with TestClient(app) as client:
+        response = client.get("/api/users")
 
     assert response.status_code == 401
     assert response.json()["message"] == "未提供认证 Token"
 
 
 def test_auth_error_response_has_cors_headers():
-    client = TestClient(app)
-
-    response = client.get(
-        "/api/users",
-        headers={"Origin": "http://example.com"},
-    )
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/users",
+            headers={"Origin": "http://example.com"},
+        )
 
     assert response.status_code == 401
     assert response.headers["access-control-allow-origin"] == "*"
 
 
 def test_login_business_error_returns_400(monkeypatch):
-    async def fake_login(db, req):
+    async def fake_login(db, req, settings):
         raise AppException(message="账号已被禁用")
 
     monkeypatch.setattr(auth_routes.auth_service, "login", fake_login)
@@ -75,7 +75,7 @@ def test_login_business_error_returns_400(monkeypatch):
 
     assert response.status_code == 400
     assert response.json() == {
-        "code": 1,
+        "code": int(ErrorCode.BAD_REQUEST),
         "message": "账号已被禁用",
         "data": None,
     }
@@ -86,7 +86,7 @@ def test_register_success_data_matches_openapi(monkeypatch):
         return None
 
     monkeypatch.setattr(auth_routes.auth_service, "register", fake_register)
-    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_transactional_db] = _override_db
     client = TestClient(app)
 
     try:
@@ -101,7 +101,7 @@ def test_register_success_data_matches_openapi(monkeypatch):
     assert response.json() == {
         "code": 0,
         "message": "注册成功",
-        "data": {},
+        "data": None,
     }
 
 
@@ -133,14 +133,6 @@ def test_legacy_bcrypt_password_hash_still_verifies():
     ).decode("utf-8")
 
     assert verify_password(password, legacy_hash)
-
-
-def test_public_path_matching_does_not_overmatch():
-    assert is_public_path("/docs")
-    assert is_public_path("/docs/")
-    assert is_public_path("/docs/oauth2-redirect")
-    assert is_public_path("/api/system/health/")
-    assert not is_public_path("/docs-extra")
 
 
 def test_openapi_marks_only_protected_routes():

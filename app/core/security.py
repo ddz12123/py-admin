@@ -1,12 +1,11 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import bcrypt
 from jose import JWTError, jwt
 
-from app.core.config import get_settings
-
-settings = get_settings()
+from app.core.config import Settings
 
 
 def _password_digest(password: str) -> bytes:
@@ -22,39 +21,48 @@ def _check_bcrypt(password: bytes, hashed_password: bytes) -> bool:
 
 
 def hash_password(password: str) -> str:
-    """对密码进行哈希"""
+    """对密码进行哈希。"""
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(_password_digest(password), salt)
     return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
+    """验证密码。"""
     hashed_password_bytes = hashed_password.encode("utf-8")
     if _check_bcrypt(_password_digest(plain_password), hashed_password_bytes):
         return True
-
-    # 兼容旧版本直接 bcrypt 的存量密码；bcrypt 只使用前 72 个字节。
     legacy_password = plain_password.encode("utf-8")[:72]
     return _check_bcrypt(legacy_password, hashed_password_bytes)
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """创建 JWT Token"""
+def create_access_token(
+    data: dict[str, Any],
+    settings: Settings,
+    expires_delta: timedelta | None = None,
+) -> str:
+    """创建 JWT Token。"""
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"iat": now, "exp": expire, "type": "access"})
+    return jwt.encode(
+        to_encode,
+        settings.SECRET_KEY.get_secret_value(),
+        algorithm=settings.ALGORITHM,
     )
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def decode_access_token(token: str) -> dict | None:
-    """解码 JWT Token"""
+def decode_access_token(token: str, settings: Settings) -> dict[str, Any] | None:
+    """解码 JWT Token。"""
     try:
         payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            settings.SECRET_KEY.get_secret_value(),
+            algorithms=[settings.ALGORITHM],
         )
+        if payload.get("type") != "access":
+            return None
         return payload
     except JWTError:
         return None

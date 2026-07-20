@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.response import success
-from app.db.session import get_db
-from app.schemas.auth_schema import LoginRequest, RegisterRequest
-from app.schemas.auth_schema import TokenResponse
-from app.schemas.response_schema import EmptyResponse, ResponseModel
+from app.db.session import get_db, get_transactional_db
+from app.dependencies.config import get_app_settings
+from app.schemas.auth_schema import LoginRequest, RegisterRequest, TokenResponse
+from app.schemas.response_schema import ResponseModel
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -15,16 +16,15 @@ router = APIRouter(prefix="/auth", tags=["认证"])
     "/register",
     summary="用户注册",
     description="注册新用户，成功后请登录获取 Token",
-    response_model=ResponseModel[EmptyResponse],
+    response_model=ResponseModel[None],
 )
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """用户注册接口
-
-    - **username**: 用户名（2-50字符，唯一）
-    - **password**: 密码（6-128字符）
-    """
+async def register(
+    req: RegisterRequest,
+    db: AsyncSession = Depends(get_transactional_db, scope="function"),
+):
+    """用户注册接口。"""
     await auth_service.register(db, req)
-    return success(data=EmptyResponse(), message="注册成功")
+    return success(data=None, message="注册成功")
 
 
 @router.post(
@@ -33,11 +33,11 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     description="用户名密码登录，成功后返回 JWT Token",
     response_model=ResponseModel[TokenResponse],
 )
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """用户登录接口
-
-    - **username**: 用户名
-    - **password**: 密码
-    """
-    result = await auth_service.login(db, req)
+async def login(
+    req: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """用户登录接口。"""
+    result = await auth_service.login(db, req, settings)
     return success(data=result, message="登录成功")
