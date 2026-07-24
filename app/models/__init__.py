@@ -1,4 +1,1 @@
-# 所有模型统一导入，新增表在这里加
-from app.models.user import User  # noqa: F401
-
-__all__ = ["User"]
+﻿"""在此导入所有模型，供 Alembic 自动发现 metadata。"""

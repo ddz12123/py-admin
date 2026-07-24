@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+﻿from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ServiceUnavailableException
+from app.core.openapi import error_responses
 from app.core.response import ErrorCode, success
 from app.db.session import get_db
 from app.schemas.response_schema import ResponseModel
@@ -19,7 +20,11 @@ async def health_check():
     return success(data=HealthResponse(status="ok"))
 
 
-@router.get("/health/ready", response_model=ResponseModel[ReadinessResponse])
+@router.get(
+    "/health/ready",
+    response_model=ResponseModel[ReadinessResponse],
+    responses=error_responses(503),
+)
 async def readiness_check(db: AsyncSession = Depends(get_db)):
     """应用就绪检查，验证数据库连接。"""
     try:

@@ -1,4 +1,4 @@
-from enum import IntEnum
+﻿from enum import IntEnum
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
@@ -7,19 +7,15 @@ SUCCESS_CODE = 0
 
 
 class ErrorCode(IntEnum):
-    """稳定的业务错误码；HTTP 状态码与业务码相互独立。"""
+    """框架级稳定错误码；模块应在自己的命名空间中扩展业务错误码。"""
 
     BAD_REQUEST = 40000
     VALIDATION_ERROR = 42200
     AUTH_REQUIRED = 40100
-    TOKEN_INVALID = 40101
-    INVALID_CREDENTIALS = 40102
     FORBIDDEN = 40300
-    ACCOUNT_DISABLED = 40301
     NOT_FOUND = 40400
     METHOD_NOT_ALLOWED = 40500
     CONFLICT = 40900
-    USERNAME_EXISTS = 40901
     INTERNAL_ERROR = 50000
     SERVICE_UNAVAILABLE = 50300
     DATABASE_UNAVAILABLE = 50301

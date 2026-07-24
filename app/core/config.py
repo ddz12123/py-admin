@@ -1,14 +1,12 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class DatabaseSettings(BaseSettings):
-    """仅包含数据库配置，供 Alembic 等独立命令使用。"""
-
-    DATABASE_URL: str = ""
+class EnvSettings(BaseSettings):
+    """统一的环境变量读取规则。"""
 
     model_config = SettingsConfigDict(
         env_prefix="PY_ADMIN_",
@@ -20,7 +18,7 @@ class DatabaseSettings(BaseSettings):
     )
 
 
-class Settings(DatabaseSettings):
+class AppSettings(EnvSettings):
     """应用运行配置。"""
 
     PROJECT_NAME: str = "Py-Admin"
@@ -32,25 +30,49 @@ class Settings(DatabaseSettings):
     PORT: int = Field(default=8000, ge=1, le=65535)
     RELOAD: bool = False
 
+    @model_validator(mode="after")
+    def validate_environment(self) -> "AppSettings":
+        if self.ENVIRONMENT == "production":
+            if self.DEBUG:
+                raise ValueError("生产环境不能开启 DEBUG")
+            if self.RELOAD:
+                raise ValueError("生产环境不能开启 RELOAD")
+        return self
+
+
+class LoggingSettings(EnvSettings):
+    """日志配置。"""
+
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     ACCESS_LOG_ENABLED: bool = True
-
-    SQL_ECHO: bool = False
-    DB_POOL_SIZE: int = Field(default=10, ge=1)
-    DB_MAX_OVERFLOW: int = Field(default=20, ge=0)
-    DB_POOL_RECYCLE: int = Field(default=3600, ge=0)
-
-    SECRET_KEY: SecretStr = SecretStr("")
-    ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
-
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
-    CORS_ALLOW_CREDENTIALS: bool = False
 
     @field_validator("LOG_LEVEL", mode="before")
     @classmethod
     def normalize_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
+
+
+class DatabaseSettings(EnvSettings):
+    """数据库配置，可供 Alembic 独立加载。"""
+
+    DATABASE_URL: str = ""
+    SQL_ECHO: bool = False
+    DB_POOL_SIZE: int = Field(default=10, ge=1)
+    DB_MAX_OVERFLOW: int = Field(default=20, ge=0)
+    DB_POOL_RECYCLE: int = Field(default=3600, ge=0)
+
+    @model_validator(mode="after")
+    def validate_database_url(self) -> "DatabaseSettings":
+        if not self.DATABASE_URL:
+            raise ValueError("DATABASE_URL 未配置，请在 .env 文件中设置")
+        return self
+
+
+class CorsSettings(EnvSettings):
+    """跨域配置。"""
+
+    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
+    CORS_ALLOW_CREDENTIALS: bool = False
 
     @field_validator("CORS_ORIGINS")
     @classmethod
@@ -61,27 +83,47 @@ class Settings(DatabaseSettings):
         return normalized
 
     @model_validator(mode="after")
-    def validate_runtime_config(self) -> "Settings":
-        if not self.DATABASE_URL:
-            raise ValueError("DATABASE_URL 未配置，请在 .env 文件中设置")
-
-        secret_key = self.SECRET_KEY.get_secret_value()
-        if not secret_key:
-            raise ValueError("SECRET_KEY 未配置，请在 .env 文件中设置")
-
+    def validate_credentials(self) -> "CorsSettings":
         if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ORIGINS:
             raise ValueError("CORS 允许携带凭证时，CORS_ORIGINS 不能使用通配符 *")
+        return self
 
-        if self.ENVIRONMENT == "production":
-            if self.DEBUG:
-                raise ValueError("生产环境不能开启 DEBUG")
-            if self.RELOAD:
-                raise ValueError("生产环境不能开启 RELOAD")
-            if "*" in self.CORS_ORIGINS:
-                raise ValueError("生产环境必须显式配置 CORS_ORIGINS")
-            if len(secret_key) < 32 or "change-in-production" in secret_key:
-                raise ValueError("生产环境 SECRET_KEY 长度至少为 32 位，且不能使用示例值")
 
+class DocsSettings(EnvSettings):
+    """OpenAPI 与 Swagger UI 配置；生产环境由应用强制关闭。"""
+
+    DOCS_ENABLED: bool = True
+    DOCS_URL: str = "/docs"
+    REDOC_URL: str = "/redoc"
+    OPENAPI_URL: str = "/openapi.json"
+    SWAGGER_JS_URL: str = (
+        "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.js"
+    )
+    SWAGGER_CSS_URL: str = (
+        "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui.css"
+    )
+
+    @field_validator("DOCS_URL", "REDOC_URL", "OPENAPI_URL")
+    @classmethod
+    def validate_route_path(cls, value: str) -> str:
+        if not value.startswith("/"):
+            raise ValueError("文档路径必须以 / 开头")
+        return value
+
+
+class Settings(BaseModel):
+    """按领域聚合全部应用配置。"""
+
+    app: AppSettings = Field(default_factory=AppSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    cors: CorsSettings = Field(default_factory=CorsSettings)
+    docs: DocsSettings = Field(default_factory=DocsSettings)
+
+    @model_validator(mode="after")
+    def validate_cross_domain_config(self) -> "Settings":
+        if self.app.ENVIRONMENT == "production" and "*" in self.cors.CORS_ORIGINS:
+            raise ValueError("生产环境必须显式配置 CORS_ORIGINS")
         return self
 
 
@@ -92,8 +134,5 @@ def get_settings() -> Settings:
 
 
 def get_database_url() -> str:
-    """获取数据库连接地址，Alembic 不需要加载 JWT 等运行配置。"""
-    settings = DatabaseSettings()
-    if not settings.DATABASE_URL:
-        raise ValueError("DATABASE_URL 未配置，请在 .env 文件中设置")
-    return settings.DATABASE_URL
+    """获取数据库连接地址，Alembic 只加载数据库领域配置。"""
+    return DatabaseSettings().DATABASE_URL

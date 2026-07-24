@@ -1,16 +1,16 @@
-from collections.abc import AsyncGenerator
+﻿from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.config import Settings
+from app.core.config import DatabaseSettings
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
 
-def create_db_engine(settings: Settings) -> AsyncEngine:
-    """根据配置创建数据库引擎。"""
+def create_db_engine(settings: DatabaseSettings) -> AsyncEngine:
+    """根据数据库领域配置创建异步引擎。"""
     engine_options: dict[str, Any] = {
         "echo": settings.SQL_ECHO,
         "pool_pre_ping": True,

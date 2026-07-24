@@ -1,4 +1,4 @@
-from typing import Any
+﻿from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -29,30 +29,6 @@ class AppException(Exception):
         self.headers = headers
         super().__init__(message)
 
-
-class AuthException(AppException):
-    def __init__(
-        self,
-        message: str = "认证失败",
-        *,
-        code: int | ErrorCode = ErrorCode.AUTH_REQUIRED,
-    ):
-        super().__init__(
-            message=message,
-            code=code,
-            http_status=401,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-
-class PermissionException(AppException):
-    def __init__(
-        self,
-        message: str = "权限不足",
-        *,
-        code: int | ErrorCode = ErrorCode.FORBIDDEN,
-    ):
-        super().__init__(message=message, code=code, http_status=403)
 
 
 class NotFoundException(AppException):

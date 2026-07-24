@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+﻿from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,10 +17,10 @@ def create_lifespan(settings: Settings):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = create_db_engine(settings)
+        engine = create_db_engine(settings.database)
         app.state.db_engine = engine
         app.state.db_session_factory = create_session_factory(engine)
-        logger.info("应用启动：environment=%s", settings.ENVIRONMENT)
+        logger.info("应用启动：environment=%s", settings.app.ENVIRONMENT)
         try:
             yield
         finally:
@@ -34,27 +34,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """创建相互独立、可注入配置的 FastAPI 应用实例。"""
     app_settings = settings if settings is not None else Settings()
     setup_logging(
-        app_settings.LOG_LEVEL,
-        disable_uvicorn_access_log=app_settings.ACCESS_LOG_ENABLED,
+        app_settings.logging.LOG_LEVEL,
+        disable_uvicorn_access_log=app_settings.logging.ACCESS_LOG_ENABLED,
     )
 
+    docs_enabled = (
+        app_settings.docs.DOCS_ENABLED
+        and app_settings.app.ENVIRONMENT != "production"
+    )
     app = FastAPI(
-        title=app_settings.PROJECT_NAME,
-        version=app_settings.PROJECT_VERSION,
-        description=app_settings.DESCRIPTION,
-        debug=app_settings.DEBUG,
+        title=app_settings.app.PROJECT_NAME,
+        version=app_settings.app.PROJECT_VERSION,
+        description=app_settings.app.DESCRIPTION,
+        debug=app_settings.app.DEBUG,
         lifespan=create_lifespan(app_settings),
-        swagger_js_url="https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.js",
-        swagger_css_url="https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui.css",
+        docs_url=app_settings.docs.DOCS_URL if docs_enabled else None,
+        redoc_url=app_settings.docs.REDOC_URL if docs_enabled else None,
+        openapi_url=app_settings.docs.OPENAPI_URL if docs_enabled else None,
+        swagger_js_url=app_settings.docs.SWAGGER_JS_URL,
+        swagger_css_url=app_settings.docs.SWAGGER_CSS_URL,
     )
     app.state.settings = app_settings
 
-    if app_settings.ACCESS_LOG_ENABLED:
+    if app_settings.logging.ACCESS_LOG_ENABLED:
         app.add_middleware(RequestLogMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=app_settings.CORS_ORIGINS,
-        allow_credentials=app_settings.CORS_ALLOW_CREDENTIALS,
+        allow_origins=app_settings.cors.CORS_ORIGINS,
+        allow_credentials=app_settings.cors.CORS_ALLOW_CREDENTIALS,
         allow_methods=["*"],
         allow_headers=["*"],
     )
