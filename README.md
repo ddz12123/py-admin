@@ -1,4 +1,4 @@
-﻿# Py-Admin
+# Py-Admin
 
 一个不绑定具体业务的 FastAPI 后端基础模板，提供应用工厂、领域化配置、异步数据库会话、请求级事务、Alembic、统一响应与异常、OpenAPI 错误模型、访问日志和健康检查。
 
@@ -13,6 +13,24 @@
 - Alembic
 - Pydantic Settings
 - uv
+
+## 目录结构
+
+```text
+app/
+├── api/            # 路由聚合与各模块路由
+├── core/           # 配置、日志、异常、统一响应、OpenAPI 声明
+├── db/             # ORM 基类、Mixin、引擎与 Session 依赖
+├── dependencies/   # 请求级依赖（配置注入等）
+├── middlewares/    # 访问日志、全局异常兜底
+├── models/         # 数据库模型（业务模块在此登记，供 Alembic 发现）
+├── schemas/        # Pydantic 请求 / 响应模型
+├── services/       # 用例逻辑
+└── main.py         # 应用工厂 create_app
+alembic/            # 数据库迁移
+tests/              # 测试
+main.py             # 本地启动入口
+```
 
 ## 快速开始
 
@@ -54,6 +72,16 @@ uv run main.py
 - 就绪检查：`http://127.0.0.1:8000/api/system/health/ready`
 - Swagger：`http://127.0.0.1:8000/docs`
 
+### 5. 运行测试与代码检查
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format .
+```
+
+测试使用 SQLite（aiosqlite），数据库文件建在系统临时目录，不依赖 MySQL 环境，也不会在仓库根目录留下文件。
+
 ## 配置结构
 
 内部配置按领域拆分：
@@ -73,12 +101,21 @@ uv run main.py
 - 必须显式配置 CORS 来源
 - 强制关闭 Swagger、ReDoc 和 OpenAPI，不受 `DOCS_ENABLED` 影响
 
-Swagger 静态资源地址已经配置化，默认保持当前 BootCDN：
+CORS 来源支持两种写法：
+
+```env
+PY_ADMIN_CORS_ORIGINS=http://a.com,http://b.com
+PY_ADMIN_CORS_ORIGINS=["http://a.com", "http://b.com"]
+```
+
+Swagger 静态资源地址已经配置化，默认使用 BootCDN（国内可直接访问）：
 
 ```env
 PY_ADMIN_SWAGGER_JS_URL=https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.js
 PY_ADMIN_SWAGGER_CSS_URL=https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui.css
 ```
+
+ReDoc 静态资源仍走 FastAPI 默认的国外 CDN，如不需要可将 `PY_ADMIN_REDOC_URL` 留空单独禁用。
 
 ## 数据库约定
 
@@ -92,7 +129,7 @@ PY_ADMIN_SWAGGER_CSS_URL=https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/sw
 ## Session 与事务
 
 - `get_db`：查询场景，只管理 Session 生命周期
-- `get_transactional_db`：写入场景，请求成功自动提交，异常自动回滚
+- `get_transactional_db`：写入场景，请求成功自动提交，异常自动回滚；必须以 `Depends(get_transactional_db, scope="function")` 使用，保证提交发生在响应返回之前
 - Service 不自行调用 `commit()` 或 `rollback()`
 - 需要提前检查约束或获取数据库结果时使用 `flush()`
 
@@ -119,6 +156,8 @@ PY_ADMIN_SWAGGER_CSS_URL=https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/sw
 ```
 
 `app.core.openapi.error_responses()` 用于把错误响应同步声明到 OpenAPI。框架只保留通用错误码，具体模块在模块内部定义自己的错误码。
+
+未捕获异常由 `GlobalExceptionMiddleware` 在 CORS 中间件内侧兜底，保证 500 响应同样遵循统一格式并带有 CORS 头。
 
 ## 健康检查
 

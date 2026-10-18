@@ -1,11 +1,9 @@
-﻿from typing import Any, Generic, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-T = TypeVar("T")
 
-
-class ResponseModel(BaseModel, Generic[T]):
+class ResponseModel[T](BaseModel):
     """统一成功响应模型。"""
 
     code: int = 0

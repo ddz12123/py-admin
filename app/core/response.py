@@ -1,4 +1,4 @@
-﻿from enum import IntEnum
+from enum import IntEnum
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder

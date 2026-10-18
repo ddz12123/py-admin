@@ -1,4 +1,4 @@
-﻿from typing import Any
+from typing import Any
 
 from app.schemas.response_schema import ErrorResponse
 

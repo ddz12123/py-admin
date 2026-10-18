@@ -1,4 +1,4 @@
-﻿# 模块开发指南
+# 模块开发指南
 
 本文说明如何在基础模板中增加业务模块。模板不预置用户、权限或其他具体业务，下面使用通用的 `Item` 作为结构示例，实际项目中请替换为自己的领域名称。
 
@@ -144,6 +144,8 @@ async def create_item(
     item = await item_service.create_item(db, req)
     return success(data=ItemResponse.model_validate(item))
 ```
+
+`scope="function"` 不能省略：它让事务提交发生在响应返回之前。缺省行为下依赖的清理代码在响应发送之后才执行，一旦提交失败，客户端已经收到成功响应。
 
 顶层 `api_router` 已统一声明 400、422、500 错误模型；接口额外可能出现的 401、403、404、409、503 等状态，应使用 `error_responses()` 显式补充。
 

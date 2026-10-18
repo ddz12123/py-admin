@@ -1,20 +1,20 @@
 import asyncio
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
-
+import app.models  # noqa: F401 会自动导入 models/__init__.py 里的所有模型
 from app.core.config import get_database_url
 from app.db.base import Base
-import app.models  # noqa: F401 会自动导入 models/__init__.py 里的所有模型
 
 # Alembic Config
 config = context.config
 
-# 从 .env 读取数据库配置；迁移不依赖 JWT 等应用运行配置
-config.set_main_option("sqlalchemy.url", get_database_url())
+# 从 .env 读取数据库配置；迁移不依赖 JWT 等应用运行配置。
+# ConfigParser 会对 % 做插值，密码里的 URL 编码字符（如 %40）必须先转义。
+config.set_main_option("sqlalchemy.url", get_database_url().replace("%", "%%"))
 
 # 日志配置
 if config.config_file_name is not None:

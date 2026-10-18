@@ -1,19 +1,10 @@
 from fastapi.testclient import TestClient
 
-from app.core.config import AppSettings, CorsSettings, DatabaseSettings, DocsSettings, Settings
+from app.core.config import CorsSettings, DocsSettings
 from app.main import create_app
 
 
-def make_settings(*, environment: str = "testing") -> Settings:
-    return Settings(
-        app=AppSettings(ENVIRONMENT=environment, DEBUG=False, RELOAD=False),
-        database=DatabaseSettings(DATABASE_URL="sqlite+aiosqlite:///./test.db"),
-        cors=CorsSettings(CORS_ORIGINS=["http://example.com"]),
-        docs=DocsSettings(),
-    )
-
-
-def test_health_check_public():
+def test_health_check_public(make_settings):
     with TestClient(create_app(make_settings())) as client:
         response = client.get("/api/system/health")
 
@@ -21,13 +12,63 @@ def test_health_check_public():
     assert response.json()["data"] == {"status": "ok"}
 
 
-def test_production_disables_api_docs():
+def test_production_disables_api_docs(make_settings):
     with TestClient(create_app(make_settings(environment="production"))) as client:
         assert client.get("/docs").status_code == 404
         assert client.get("/openapi.json").status_code == 404
 
 
-def test_openapi_uses_unified_error_model():
+def test_docs_use_custom_swagger_cdn(make_settings):
+    settings = make_settings()
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert settings.docs.SWAGGER_JS_URL in response.text
+    assert settings.docs.SWAGGER_CSS_URL in response.text
+
+
+def test_redoc_can_be_disabled_separately(make_settings):
+    settings = make_settings()
+    settings.docs = DocsSettings(REDOC_URL="")
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/redoc").status_code == 404
+        assert client.get("/docs").status_code == 200
+
+
+def test_redoc_can_be_disabled_by_empty_env(make_settings, monkeypatch):
+    monkeypatch.setenv("PY_ADMIN_REDOC_URL", "")
+    settings = make_settings()
+    settings.docs = DocsSettings()
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/redoc").status_code == 404
+        assert client.get("/docs").status_code == 200
+
+
+def test_unhandled_error_returns_unified_body_with_cors_headers(make_settings):
+    app = create_app(make_settings())
+
+    @app.get("/api/boom")
+    async def boom():
+        raise RuntimeError("boom")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/boom", headers={"Origin": "http://example.com"})
+
+    assert response.status_code == 500
+    assert response.json()["code"] == 50000
+    assert response.headers.get("access-control-allow-origin") == "http://example.com"
+
+
+def test_cors_origins_accepts_comma_separated_env(monkeypatch):
+    monkeypatch.setenv("PY_ADMIN_CORS_ORIGINS", "http://a.com, http://b.com")
+    assert CorsSettings().CORS_ORIGINS == ["http://a.com", "http://b.com"]
+
+    monkeypatch.setenv("PY_ADMIN_CORS_ORIGINS", '["http://c.com"]')
+    assert CorsSettings().CORS_ORIGINS == ["http://c.com"]
+
+
+def test_openapi_uses_unified_error_model(make_settings):
     app = create_app(make_settings())
     schema = app.openapi()
     responses = schema["paths"]["/api/system/health"]["get"]["responses"]

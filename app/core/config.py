@@ -1,8 +1,13 @@
-﻿from functools import lru_cache
-from typing import Literal
+import json
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# 按项目根目录定位 .env，避免从其他工作目录启动时读不到配置。
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class EnvSettings(BaseSettings):
@@ -10,7 +15,7 @@ class EnvSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PY_ADMIN_",
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         case_sensitive=False,
@@ -71,8 +76,19 @@ class DatabaseSettings(EnvSettings):
 class CorsSettings(EnvSettings):
     """跨域配置。"""
 
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["*"])
     CORS_ALLOW_CREDENTIALS: bool = False
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> object:
+        # 环境变量同时支持 JSON 数组和逗号分隔两种写法。
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return text.split(",")
+        return value
 
     @field_validator("CORS_ORIGINS")
     @classmethod
@@ -92,6 +108,9 @@ class CorsSettings(EnvSettings):
 class DocsSettings(EnvSettings):
     """OpenAPI 与 Swagger UI 配置；生产环境由应用强制关闭。"""
 
+    # 文档地址需要支持“显式留空”来关闭对应页面，因此不能忽略空值环境变量。
+    model_config = SettingsConfigDict(**{**EnvSettings.model_config, "env_ignore_empty": False})
+
     DOCS_ENABLED: bool = True
     DOCS_URL: str = "/docs"
     REDOC_URL: str = "/redoc"
@@ -99,14 +118,20 @@ class DocsSettings(EnvSettings):
     SWAGGER_JS_URL: str = (
         "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.js"
     )
-    SWAGGER_CSS_URL: str = (
-        "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui.css"
-    )
+    SWAGGER_CSS_URL: str = "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.17.14/swagger-ui.css"
 
-    @field_validator("DOCS_URL", "REDOC_URL", "OPENAPI_URL")
+    @field_validator("DOCS_URL", "OPENAPI_URL")
     @classmethod
     def validate_route_path(cls, value: str) -> str:
         if not value.startswith("/"):
+            raise ValueError("文档路径必须以 / 开头")
+        return value
+
+    @field_validator("REDOC_URL")
+    @classmethod
+    def validate_redoc_path(cls, value: str) -> str:
+        # ReDoc 静态资源走国外 CDN，留空可单独禁用 ReDoc 而保留 Swagger。
+        if value and not value.startswith("/"):
             raise ValueError("文档路径必须以 / 开头")
         return value
 

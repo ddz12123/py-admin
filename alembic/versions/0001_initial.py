@@ -1,4 +1,4 @@
-﻿"""initial empty baseline
+"""initial empty baseline
 
 Revision ID: 0001_initial
 Revises:

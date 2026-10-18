@@ -1,8 +1,13 @@
-﻿from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.config import DatabaseSettings
 
@@ -44,7 +49,11 @@ async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_transactional_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
-    """提供请求级事务：正常结束自动提交，出现异常自动回滚。"""
+    """提供请求级事务：正常结束自动提交，出现异常自动回滚。
+
+    必须以 Depends(get_transactional_db, scope="function") 方式使用，
+    否则提交发生在响应发送之后，提交失败时客户端已收到成功响应。
+    """
     session_factory = get_session_factory(request)
     async with session_factory.begin() as session:
         yield session

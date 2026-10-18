@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 
 from app.api.routes import system_routes
 from app.core.openapi import COMMON_ERROR_RESPONSES

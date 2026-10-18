@@ -1,7 +1,6 @@
-﻿from typing import Any
+from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -28,7 +27,6 @@ class AppException(Exception):
         self.data = data
         self.headers = headers
         super().__init__(message)
-
 
 
 class NotFoundException(AppException):
@@ -62,7 +60,7 @@ def _format_validation_errors(exc: RequestValidationError) -> list[dict[str, Any
     for error in exc.errors():
         message = error.get("msg", "参数错误")
         if message.startswith("Value error, "):
-            message = message[len("Value error, "):]
+            message = message[len("Value error, ") :]
         errors.append(
             {
                 "field": ".".join(str(item) for item in error.get("loc", [])),
@@ -102,7 +100,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     """注册统一异常处理器，保证框架异常也遵循统一响应格式。"""
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
         errors = _format_validation_errors(exc)
         logger.warning(
             "[%s] %s %s - 请求参数校验失败",

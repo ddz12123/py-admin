@@ -1,9 +1,31 @@
 import os
-import sys
-from pathlib import Path
+from collections.abc import Callable
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT_DIR))
+import pytest
 
-os.environ["PY_ADMIN_DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
-os.environ["PY_ADMIN_DEBUG"] = "false"
+from app.core.config import AppSettings, CorsSettings, DatabaseSettings, DocsSettings, Settings
+
+
+@pytest.fixture(scope="session", autouse=True)
+def test_database_url(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """把测试数据库放到临时目录，避免在仓库根目录留下 .db 文件。"""
+    db_file = tmp_path_factory.mktemp("database") / "test.db"
+    url = f"sqlite+aiosqlite:///{db_file.as_posix()}"
+    os.environ["PY_ADMIN_DATABASE_URL"] = url
+    os.environ["PY_ADMIN_DEBUG"] = "false"
+    return url
+
+
+@pytest.fixture
+def make_settings(test_database_url: str) -> Callable[..., Settings]:
+    """构造一份相互独立的测试配置，数据库指向临时文件。"""
+
+    def factory(*, environment: str = "testing") -> Settings:
+        return Settings(
+            app=AppSettings(ENVIRONMENT=environment, DEBUG=False, RELOAD=False),
+            database=DatabaseSettings(DATABASE_URL=test_database_url),
+            cors=CorsSettings(CORS_ORIGINS=["http://example.com"]),
+            docs=DocsSettings(),
+        )
+
+    return factory
