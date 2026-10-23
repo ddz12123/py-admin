@@ -25,6 +25,7 @@ def create_db_engine(settings: DatabaseSettings) -> AsyncEngine:
             {
                 "pool_size": settings.DB_POOL_SIZE,
                 "max_overflow": settings.DB_MAX_OVERFLOW,
+                "pool_timeout": settings.DB_POOL_TIMEOUT,
                 "pool_recycle": settings.DB_POOL_RECYCLE,
             }
         )
@@ -45,14 +46,18 @@ async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
     """只管理 Session 生命周期，不自动提交事务，适用于查询场景。"""
     session_factory = get_session_factory(request)
     async with session_factory() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 async def get_transactional_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
-    """提供请求级事务：正常结束自动提交，出现异常自动回滚。
+    """提供请求级事务：正常结束自动提交，异常自动回滚。
 
     必须以 Depends(get_transactional_db, scope="function") 方式使用，
-    否则提交发生在响应发送之后，提交失败时客户端已收到成功响应。
+    确保提交发生在响应返回之前。
     """
     session_factory = get_session_factory(request)
     async with session_factory.begin() as session:

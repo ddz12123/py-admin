@@ -24,7 +24,7 @@ def setup_logging(level: str = "INFO", *, disable_uvicorn_access_log: bool = Tru
     app_logger.handlers.clear()
     app_logger.addHandler(console_handler)
 
-    # 使用自定义访问日志时关闭 Uvicorn 的重复访问日志；关闭自定义日志时恢复它。
+    # Disable Uvicorn access logs to avoid duplicate entries.
     logging.getLogger("uvicorn.access").disabled = disable_uvicorn_access_log
     logging.captureWarnings(True)
 

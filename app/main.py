@@ -12,6 +12,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logger import logger, setup_logging
 from app.db.session import create_db_engine, create_session_factory
 from app.middlewares.exception_middleware import GlobalExceptionMiddleware
+from app.middlewares.request_id_middleware import RequestIDMiddleware
 from app.middlewares.request_log_middleware import RequestLogMiddleware
 
 
@@ -38,7 +39,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings if settings is not None else Settings()
     setup_logging(
         app_settings.logging.LOG_LEVEL,
-        disable_uvicorn_access_log=app_settings.logging.ACCESS_LOG_ENABLED,
+        # Disable Uvicorn access logs; the custom middleware owns access logging.
+        disable_uvicorn_access_log=True,
     )
 
     docs_enabled = app_settings.docs.DOCS_ENABLED and app_settings.app.ENVIRONMENT != "production"
@@ -75,7 +77,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=app_settings.cors.CORS_ALLOW_CREDENTIALS,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
+    # 始终保留请求 ID，即使关闭访问日志后也便于客户端和网关关联问题。
+    app.add_middleware(RequestIDMiddleware)
 
     register_exception_handlers(app)
     app.include_router(api_router)

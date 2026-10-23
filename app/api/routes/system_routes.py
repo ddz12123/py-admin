@@ -1,12 +1,16 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.exceptions import ServiceUnavailableException
 from app.core.openapi import error_responses
 from app.core.response import ErrorCode, success
 from app.db.session import get_db
+from app.dependencies.config import get_app_settings
 from app.schemas.response_schema import ResponseModel
 from app.schemas.system_schema import HealthResponse, ReadinessResponse
 
@@ -25,11 +29,15 @@ async def health_check():
     response_model=ResponseModel[ReadinessResponse],
     responses=error_responses(503),
 )
-async def readiness_check(db: AsyncSession = Depends(get_db)):
-    """应用就绪检查，验证数据库连接。"""
+async def readiness_check(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Check database connectivity without allowing probes to wait forever."""
     try:
-        await db.execute(text("SELECT 1"))
-    except SQLAlchemyError as exc:
+        async with asyncio.timeout(settings.database.DB_HEALTHCHECK_TIMEOUT):
+            await db.execute(text("SELECT 1"))
+    except (SQLAlchemyError, TimeoutError) as exc:
         raise ServiceUnavailableException(
             message="数据库暂不可用",
             code=ErrorCode.DATABASE_UNAVAILABLE,

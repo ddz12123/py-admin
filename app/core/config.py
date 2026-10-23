@@ -58,13 +58,20 @@ class LoggingSettings(EnvSettings):
 
 
 class DatabaseSettings(EnvSettings):
-    """数据库配置，可供 Alembic 独立加载。"""
+    """数据库配置，可供应用和 Alembic 独立加载。"""
 
     DATABASE_URL: str = ""
     SQL_ECHO: bool = False
     DB_POOL_SIZE: int = Field(default=10, ge=1)
     DB_MAX_OVERFLOW: int = Field(default=20, ge=0)
+    DB_POOL_TIMEOUT: float = Field(default=30.0, gt=0)
     DB_POOL_RECYCLE: int = Field(default=3600, ge=0)
+    DB_HEALTHCHECK_TIMEOUT: float = Field(default=2.0, gt=0, le=30.0)
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def validate_database_url(self) -> "DatabaseSettings":
@@ -86,7 +93,10 @@ class CorsSettings(EnvSettings):
         if isinstance(value, str):
             text = value.strip()
             if text.startswith("["):
-                return json.loads(text)
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("CORS_ORIGINS 必须是合法 JSON 数组或逗号分隔字符串") from exc
             return text.split(",")
         return value
 
@@ -106,9 +116,9 @@ class CorsSettings(EnvSettings):
 
 
 class DocsSettings(EnvSettings):
-    """OpenAPI 与 Swagger UI 配置；生产环境由应用强制关闭。"""
+    """OpenAPI、Swagger UI 配置；生产环境由应用强制关闭。"""
 
-    # 文档地址需要支持“显式留空”来关闭对应页面，因此不能忽略空值环境变量。
+    # 文档地址需要支持“显式留空”来关闭对应页面。
     model_config = SettingsConfigDict(**{**EnvSettings.model_config, "env_ignore_empty": False})
 
     DOCS_ENABLED: bool = True
@@ -130,10 +140,17 @@ class DocsSettings(EnvSettings):
     @field_validator("REDOC_URL")
     @classmethod
     def validate_redoc_path(cls, value: str) -> str:
-        # ReDoc 静态资源走国外 CDN，留空可单独禁用 ReDoc 而保留 Swagger。
+        # ReDoc 留空可单独禁用，非空时必须是绝对路由路径。
         if value and not value.startswith("/"):
             raise ValueError("文档路径必须以 / 开头")
         return value
+
+    @model_validator(mode="after")
+    def validate_route_uniqueness(self) -> "DocsSettings":
+        paths = [path for path in (self.DOCS_URL, self.REDOC_URL, self.OPENAPI_URL) if path]
+        if len(paths) != len(set(paths)):
+            raise ValueError("DOCS_URL、REDOC_URL 和 OPENAPI_URL 不能重复")
+        return self
 
 
 class Settings(BaseModel):

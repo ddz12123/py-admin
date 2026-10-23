@@ -22,7 +22,7 @@ app/
 ├── core/           # 配置、日志、异常、统一响应、OpenAPI 声明
 ├── db/             # ORM 基类、Mixin、引擎与 Session 依赖
 ├── dependencies/   # 请求级依赖（配置注入等）
-├── middlewares/    # 访问日志、全局异常兜底
+├── middlewares/    # 请求 ID、访问日志、全局异常兜底
 ├── models/         # 数据库模型（业务模块在此登记，供 Alembic 发现）
 ├── schemas/        # Pydantic 请求 / 响应模型
 ├── services/       # 用例逻辑
@@ -88,7 +88,7 @@ uv run ruff format .
 
 - `settings.app`：应用名称、环境、监听地址
 - `settings.logging`：日志
-- `settings.database`：数据库和连接池
+- `settings.database`：数据库和连接池（连接超时、回收策略）
 - `settings.cors`：跨域
 - `settings.docs`：OpenAPI、Swagger 和 ReDoc
 
@@ -125,6 +125,7 @@ ReDoc 静态资源仍走 FastAPI 默认的国外 CDN，如不需要可将 `PY_AD
 - 应用时间统一使用带时区的 UTC `datetime`
 - API 时间交给 Pydantic 输出 ISO 8601，不手写 `strftime`
 - 应用启动时不自动建表，数据库结构统一由 Alembic 管理
+- Alembic 自动生成迁移时开启类型和默认值比较；仅 SQLite 使用 batch 模式
 
 ## Session 与事务
 
@@ -157,7 +158,7 @@ ReDoc 静态资源仍走 FastAPI 默认的国外 CDN，如不需要可将 `PY_AD
 
 `app.core.openapi.error_responses()` 用于把错误响应同步声明到 OpenAPI。框架只保留通用错误码，具体模块在模块内部定义自己的错误码。
 
-未捕获异常由 `GlobalExceptionMiddleware` 在 CORS 中间件内侧兜底，保证 500 响应同样遵循统一格式并带有 CORS 头。
+未捕获异常由 `GlobalExceptionMiddleware` 在 CORS 中间件内侧兜底，保证 500 响应同样遵循统一格式并带有 CORS 头。5xx 的 HTTP detail 不会直接返回，避免泄露内部信息。`RequestIDMiddleware` 会为每个请求生成或透传 `X-Request-ID`，便于日志与网关排查问题。
 
 ## 健康检查
 

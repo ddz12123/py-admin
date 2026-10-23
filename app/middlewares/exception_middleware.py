@@ -34,11 +34,12 @@ class GlobalExceptionMiddleware:
         except Exception as exc:
             request = Request(scope)
             logger.error(
-                "[%s] %s %s - %s",
+                "[%s] %s %s - %s | request_id=%s",
                 ErrorCode.INTERNAL_ERROR,
                 request.method,
                 request.url.path,
                 exc,
+                scope.get("state", {}).get("request_id", "-"),
                 exc_info=True,
             )
             if response_started:

@@ -76,3 +76,61 @@ def test_openapi_uses_unified_error_model(make_settings):
     assert "400" in responses
     assert "422" in responses
     assert "500" in responses
+
+
+def test_request_id_is_returned_and_can_be_provided_by_caller(make_settings):
+    with TestClient(create_app(make_settings())) as client:
+        generated = client.get("/api/system/health", headers={"Origin": "http://example.com"})
+        provided = client.get(
+            "/api/system/health",
+            headers={"Origin": "http://example.com", "X-Request-ID": "trace-123"},
+        )
+
+    assert generated.status_code == 200
+    assert generated.headers["x-request-id"]
+    assert generated.headers["access-control-expose-headers"] == "X-Request-ID"
+    assert provided.headers["x-request-id"] == "trace-123"
+
+
+def test_internal_http_error_does_not_expose_detail(make_settings):
+    from fastapi import HTTPException
+
+    app = create_app(make_settings())
+
+    @app.get("/api/hidden-error")
+    async def hidden_error():
+        raise HTTPException(status_code=500, detail={"secret": "do-not-return"})
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/hidden-error")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "code": 50000,
+        "message": "服务器内部错误",
+        "data": None,
+    }
+
+
+def test_internal_app_exception_does_not_expose_detail(make_settings):
+    from app.core.exceptions import AppException
+
+    app = create_app(make_settings())
+
+    @app.get("/api/hidden-app-error")
+    async def hidden_app_error():
+        raise AppException(
+            message="internal secret",
+            http_status=500,
+            data={"secret": "do-not-return"},
+        )
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/hidden-app-error")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "code": 50000,
+        "message": "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef",
+        "data": None,
+    }

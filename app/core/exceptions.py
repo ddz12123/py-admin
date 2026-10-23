@@ -22,8 +22,12 @@ class AppException(Exception):
         headers: dict[str, str] | None = None,
     ):
         self.message = message
-        self.code = int(code)
         self.http_status = http_status
+        self.code = int(
+            ErrorCode.INTERNAL_ERROR
+            if http_status >= 500 and code == ErrorCode.BAD_REQUEST
+            else code
+        )
         self.data = data
         self.headers = headers
         super().__init__(message)
@@ -106,10 +110,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         errors = _format_validation_errors(exc)
         logger.warning(
-            "[%s] %s %s - 请求参数校验失败",
+            "[%s] %s %s - validation failed | request_id=%s",
             ErrorCode.VALIDATION_ERROR,
             request.method,
             request.url.path,
+            getattr(request.state, "request_id", "-"),
         )
         return JSONResponse(
             status_code=422,
@@ -122,23 +127,43 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
-        logger.warning("[%s] %s %s - %s", exc.code, request.method, request.url.path, exc.message)
+        logger.warning(
+            "[%s] %s %s - %s | request_id=%s",
+            exc.code,
+            request.method,
+            request.url.path,
+            exc.message,
+            getattr(request.state, "request_id", "-"),
+        )
+        data = None if exc.http_status >= 500 else exc.data
+        message = _http_error_message(exc.http_status) if exc.http_status >= 500 else exc.message
         return JSONResponse(
             status_code=exc.http_status,
-            content=fail(code=exc.code, message=exc.message, data=exc.data),
+            content=fail(code=exc.code, message=message, data=data),
             headers=exc.headers,
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _http_error_code(exc.status_code)
-        if isinstance(exc.detail, str):
+        # 5xx 的 detail 可能包含数据库地址、凭据或内部实现信息，不直接返回给客户端。
+        if exc.status_code >= 500:
+            message = _http_error_message(exc.status_code)
+            data = None
+        elif isinstance(exc.detail, str):
             message = exc.detail
             data = None
         else:
             message = _http_error_message(exc.status_code)
             data = exc.detail
-        logger.warning("[%s] %s %s - %s", code, request.method, request.url.path, message)
+        logger.warning(
+            "[%s] %s %s - %s | request_id=%s",
+            code,
+            request.method,
+            request.url.path,
+            message,
+            getattr(request.state, "request_id", "-"),
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content=fail(code=code, message=message, data=data),
@@ -148,11 +173,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.error(
-            "[%s] %s %s - %s",
+            "[%s] %s %s - %s | request_id=%s",
             ErrorCode.INTERNAL_ERROR,
             request.method,
             request.url.path,
             exc,
+            getattr(request.state, "request_id", "-"),
             exc_info=True,
         )
         return JSONResponse(
