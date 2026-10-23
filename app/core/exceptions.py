@@ -127,7 +127,8 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
-        logger.warning(
+        log = logger.error if exc.http_status >= 500 else logger.warning
+        log(
             "[%s] %s %s - %s | request_id=%s",
             exc.code,
             request.method,
@@ -156,7 +157,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         else:
             message = _http_error_message(exc.status_code)
             data = exc.detail
-        logger.warning(
+        log = logger.error if exc.status_code >= 500 else logger.warning
+        log(
             "[%s] %s %s - %s | request_id=%s",
             code,
             request.method,

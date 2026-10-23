@@ -67,6 +67,7 @@ logs/
 .cursorrules
 .windsurfrules
 CLAUDE.md
+.mimosa/
 
 # Alembic
 alembic/versions/*.pyc

@@ -20,7 +20,8 @@ def create_db_engine(settings: DatabaseSettings) -> AsyncEngine:
         "echo": settings.SQL_ECHO,
         "pool_pre_ping": True,
     }
-    if settings.DATABASE_URL.startswith("mysql"):
+    # 连接池参数对服务器型数据库才有意义；SQLite 保持默认池行为。
+    if not settings.DATABASE_URL.startswith("sqlite"):
         engine_options.update(
             {
                 "pool_size": settings.DB_POOL_SIZE,

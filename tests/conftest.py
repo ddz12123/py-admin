@@ -13,6 +13,11 @@ def test_database_url(tmp_path_factory: pytest.TempPathFactory) -> str:
     url = f"sqlite+aiosqlite:///{db_file.as_posix()}"
     os.environ["PY_ADMIN_DATABASE_URL"] = url
     os.environ["PY_ADMIN_DEBUG"] = "false"
+    # 固定文档相关配置，避免开发者本地 .env 中的自定义值影响测试结果。
+    os.environ["PY_ADMIN_DOCS_ENABLED"] = "true"
+    os.environ["PY_ADMIN_DOCS_URL"] = "/docs"
+    os.environ["PY_ADMIN_REDOC_URL"] = "/redoc"
+    os.environ["PY_ADMIN_OPENAPI_URL"] = "/openapi.json"
     return url
 
 
