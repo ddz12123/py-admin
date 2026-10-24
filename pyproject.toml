@@ -3,6 +3,7 @@ name = "py-admin"
 version = "0.1.0"
 description = "A business-neutral FastAPI backend template"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "aiomysql>=0.3.2",
